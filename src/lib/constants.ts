@@ -59,7 +59,6 @@ export const SKILLS: Skill[] = [
   { name: "TypeScript", category: "Languages" },
   { name: "JavaScript", category: "Languages" },
   { name: "Python", category: "Languages" },
-  { name: "Go", category: "Languages" },
   { name: "React", category: "Frontend" },
   { name: "Next.js", category: "Frontend" },
   { name: "Astro", category: "Frontend" },
