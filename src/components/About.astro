@@ -1,0 +1,46 @@
+---
+import AnimatedSection from "./AnimatedSection";
+---
+
+<section id="about" class="border-t border-border bg-bg-alt py-20 md:py-28">
+  <div class="mx-auto max-w-4xl px-6">
+    <AnimatedSection client:visible>
+      <h2 class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
+        About
+      </h2>
+    </AnimatedSection>
+
+    <AnimatedSection client:visible>
+      <h3 class="mb-8 text-3xl font-bold tracking-tight text-text-primary md:text-4xl">
+        A bit about me
+      </h3>
+    </AnimatedSection>
+
+    <div class="space-y-4 text-text-secondary leading-relaxed">
+      <AnimatedSection client:visible>
+        <p>
+          I'm a Software Engineer who enjoys building tools that solve real problems —
+          whether that's open-source projects, self-hosted infrastructure, or
+          applications that make life easier. I'm always looking for new ways to
+          learn and improve.
+        </p>
+      </AnimatedSection>
+
+      <AnimatedSection client:visible>
+        <p>
+          Outside of work, I spend a lot of time tinkering with my homelab setup,
+          exploring new technologies, and contributing to open source. I believe in
+          sharing knowledge, which is why I write about the things I build and the
+          lessons I learn along the way.
+        </p>
+      </AnimatedSection>
+
+      <AnimatedSection client:visible>
+        <p>
+          When I'm not coding, you'll probably find me automating something that
+          doesn't need automating, or going down a rabbit hole of Docker containers.
+        </p>
+      </AnimatedSection>
+    </div>
+  </div>
+</section>

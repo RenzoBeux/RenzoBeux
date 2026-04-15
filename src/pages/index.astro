@@ -1,0 +1,66 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Hero from "../components/Hero";
+import About from "../components/About.astro";
+import Skills from "../components/Skills";
+import Projects from "../components/Projects";
+import BlogCard from "../components/BlogCard.astro";
+import ContactSection from "../components/ContactSection.astro";
+import AnimatedSection from "../components/AnimatedSection";
+import { getCollection } from "astro:content";
+import { getReadTime } from "../lib/utils";
+
+const posts = (await getCollection("blog"))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf())
+  .slice(0, 3);
+---
+
+<BaseLayout>
+  <Hero client:load />
+  <About />
+  <Skills client:visible />
+  <Projects client:visible />
+
+  {/* Latest Posts */}
+  {
+    posts.length > 0 && (
+      <section class="border-t border-border bg-bg-alt py-20 md:py-28">
+        <div class="mx-auto max-w-6xl px-6">
+          <AnimatedSection client:visible>
+            <h2 class="mb-4 text-sm font-medium uppercase tracking-widest text-accent">
+              Blog
+            </h2>
+          </AnimatedSection>
+          <AnimatedSection client:visible>
+            <div class="mb-12 flex items-end justify-between">
+              <h3 class="text-3xl font-bold tracking-tight text-text-primary md:text-4xl">
+                Latest posts
+              </h3>
+              <a
+                href="/blog"
+                class="text-sm text-text-secondary transition-colors duration-150 hover:text-accent-hover"
+              >
+                View all &rarr;
+              </a>
+            </div>
+          </AnimatedSection>
+          <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {posts.map((post) => (
+              <BlogCard
+                title={post.data.title}
+                description={post.data.description}
+                date={post.data.date}
+                tags={post.data.tags}
+                slug={post.id}
+                readTime={getReadTime(post.body ?? "")}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  <ContactSection />
+</BaseLayout>

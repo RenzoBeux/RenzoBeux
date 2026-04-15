@@ -1,0 +1,678 @@
+---
+title: "The Complete *arr Stack: From Zero to Automated Media Server"
+description: "A deep dive into my real Docker Compose setup — Sonarr, Radarr, Prowlarr, qBittorrent, Plex, Jellyfin, Tdarr, and more. Architecture, configuration, and lessons learned."
+date: 2026-04-10
+tags: ["docker", "self-hosting", "homelab", "arr-stack", "plex", "jellyfin"]
+draft: false
+---
+
+This is my actual media server stack. Not a minimal example, not a getting-started template — the real thing, running on a home server with two drives, an NVIDIA GPU, and over a dozen containers working together.
+
+I'll walk through the architecture, explain every service and how they connect, and share the Docker Compose file piece by piece so you can adapt it to your own setup.
+
+## What the *arr stack actually is
+
+The *arr stack is a collection of open-source applications that automate media management. Each app handles a specific domain:
+
+- **Prowlarr** manages your indexers (where to search for content)
+- **Sonarr** automates TV show downloads
+- **Radarr** automates movie downloads
+- **qBittorrent** handles the actual downloading
+- **Plex / Jellyfin** serves the media to your devices
+- **Overseerr** lets family and friends request content
+- **Tautulli** monitors who's watching what on Plex
+- **Tdarr** fixes file formats and container issues in your media library
+- **FlareSolverr** bypasses Cloudflare protections on indexer sites
+
+The key idea: you request a movie or TV show, and the stack finds it, downloads it, organizes it, and makes it available to stream — automatically.
+
+## Architecture overview
+
+Here's how data flows through the stack:
+
+```
+  Request                Search              Download            Serve
+  ───────                ──────              ────────            ─────
+
+ Overseerr ──────▶ Sonarr / Radarr ──────▶ qBittorrent ──────▶ Plex
+ (requests)        (media managers)         (torrent client)    Jellyfin
+                          │                                       ▲
+                          ▼                                       │
+                      Prowlarr ◀── FlareSolverr          Tdarr ──┘
+                      (indexers)   (CAPTCHA bypass)    (file fixes)
+```
+
+**Prowlarr** is the hub for indexer management. You configure your indexers once in Prowlarr, and it syncs them to Sonarr and Radarr automatically. When Sonarr wants a TV episode, it queries Prowlarr, which searches across all your indexers and returns results. Sonarr picks the best match and sends it to qBittorrent for download.
+
+**FlareSolverr** sits behind Prowlarr. Some indexer sites use Cloudflare protection — FlareSolverr runs a headless browser that solves those challenges so Prowlarr can access the sites.
+
+**Overseerr** is the user-facing frontend. Instead of giving your family access to Sonarr/Radarr directly, they use Overseerr to browse trending content and make requests. Overseerr forwards those requests to Sonarr or Radarr.
+
+**Tautulli** watches Plex and collects playback stats — who watched what, when, stream quality, bandwidth usage. Useful for knowing if your transcoding settings are working or if someone's been buffering.
+
+**Tdarr** is independent from the download pipeline. I use it to manually fix file format issues — remuxing containers, fixing incorrect codecs, stripping unnecessary audio tracks. It's not doing bulk transcoding; Plex handles real-time transcoding on the fly with the GPU (more on that below).
+
+## Storage layout
+
+This is critical to get right. My server has two drives:
+
+- `/mnt/media` — NVMe SSD, fast storage for active downloads and primary media
+- `/mnt/mediaB` — HDD, bulk storage for movies
+
+The volume mounts in the compose file reflect this:
+
+```
+/mnt/media/media/downloads  → qBittorrent downloads here
+/mnt/media/media/           → Sonarr manages TV shows here
+/mnt/mediaB/media/          → Radarr manages movies here (HDD, bulk storage)
+```
+
+The important thing is that **Sonarr/Radarr and qBittorrent must see the same filesystem paths**. If qBittorrent downloads to `/mediaFolder/downloads` inside its container, Sonarr must also see that same path at `/mediaFolder/downloads`. Otherwise, Sonarr can't hardlink or move the files after download — it has to copy them, which wastes disk space and I/O.
+
+In my setup both Sonarr and qBittorrent mount the download directory at `/mediaFolder/downloads` inside their containers. This lets Sonarr use atomic moves (or hardlinks when the paths are on the same filesystem) instead of copies.
+
+## The Docker Compose file
+
+Let's go through it section by section.
+
+### Networking
+
+```yaml
+networks:
+  media_network:
+    driver: bridge
+```
+
+Most services join `media_network`, a custom bridge network. This lets containers talk to each other by container name — Sonarr can reach qBittorrent at `http://qbittorrent:8080`, Prowlarr can reach Sonarr at `http://sonarr:8989`, etc. No need to expose every port to the host.
+
+The exceptions are **Plex** and **Jellyfin**, which use `network_mode: host`. Media servers need host networking for DLNA discovery, and Plex specifically uses it for direct play to work properly on the local network.
+
+### Download client — qBittorrent
+
+```yaml
+qbittorrent:
+  image: lscr.io/linuxserver/qbittorrent:latest
+  container_name: qbittorrent
+  environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=America/Montevideo
+    - WEBUI_PORT=8080
+  volumes:
+    - ./configTorrent:/config
+    - /mnt/media/media/downloads:/mediaFolder/downloads
+    - /mnt/mediaB/media/movies:/mediaFolder/movies
+  ports:
+    - 8080:8080
+    - 6881:6881
+    - 6881:6881/udp
+  restart: unless-stopped
+  networks:
+    - media_network
+```
+
+Port `6881` is the BitTorrent listening port — it needs to be exposed for incoming peer connections. `8080` is the Web UI. The two volume mounts give qBittorrent access to both the download directory (NVMe) and the movies folder (HDD), so Radarr can hardlink completed downloads directly into the movie library.
+
+### Indexer management — Prowlarr + FlareSolverr
+
+```yaml
+prowlarr:
+  image: lscr.io/linuxserver/prowlarr:latest
+  container_name: prowlarr
+  environment:
+    - PUID=1026
+    - PGID=101
+    - TZ=America/Montevideo
+  volumes:
+    - ./configProwlarr:/config
+  ports:
+    - 9696:9696
+  restart: unless-stopped
+  depends_on:
+    - qbittorrent
+  networks:
+    - media_network
+```
+
+Prowlarr depends on qBittorrent because it needs the download client to be available when it starts. The `PUID`/`PGID` here is different from the other services (1026:101 vs 1000:1000) — this matches the file ownership on my system for the Prowlarr config directory. Adjust these to match your own setup.
+
+```yaml
+flaresolverr:
+  image: ghcr.io/flaresolverr/flaresolverr:latest
+  container_name: flaresolverr
+  environment:
+    - LOG_LEVEL=${LOG_LEVEL:-info}
+    - LOG_HTML=${LOG_HTML:-false}
+    - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+    - TZ=America/Montevideo
+  ports:
+    - "${PORT:-8191}:8191"
+  restart: unless-stopped
+```
+
+FlareSolverr uses environment variable defaults (`${VAR:-default}`) so you can override them from a `.env` file without touching the compose file. In Prowlarr, you add FlareSolverr as an indexer proxy pointing to `http://flaresolverr:8191`.
+
+I also run **Jackett** as a secondary indexer alongside Prowlarr:
+
+```yaml
+jackett:
+  container_name: jackett
+  restart: unless-stopped
+  ports:
+    - 9117:9117
+  volumes:
+    - ./configJackett:/config
+  environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=America/Montevideo
+  image: linuxserver/jackett
+  networks:
+    - media_network
+```
+
+Prowlarr is the newer replacement for Jackett, but some indexers still work better with Jackett. Running both costs almost nothing in terms of resources.
+
+### Media managers — Sonarr & Radarr
+
+```yaml
+sonarr:
+  image: ghcr.io/linuxserver/sonarr:latest
+  container_name: sonarr
+  environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=America/Montevideo
+  volumes:
+    - ./configSonarr:/config
+    - /mnt/media/media:/mediaFolder
+  ports:
+    - 8989:8989
+  restart: unless-stopped
+  networks:
+    - media_network
+```
+
+Sonarr mounts the entire `/mnt/media/media` directory as `/mediaFolder`. This means it can see both the downloads folder and the TV library folder under the same mount — enabling hardlinks.
+
+```yaml
+radarr:
+  image: lscr.io/linuxserver/radarr:latest
+  container_name: radarr
+  environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=America/Montevideo
+  volumes:
+    - ./configRadarr:/config
+    - /mnt/mediaB/media:/mediaFolder
+    - /mnt/media/media/downloads:/mediaFolder/downloads
+  ports:
+    - 7878:7878
+  restart: unless-stopped
+  networks:
+    - media_network
+```
+
+Radarr's volume setup is slightly more complex because movies live on a different drive (`/mnt/mediaB`) than downloads (`/mnt/media`). It mounts both so it can access downloads and move completed files to the movie library. Since these are on different filesystems, Radarr will copy + delete instead of hardlinking — a tradeoff for using the larger HDD for movie storage.
+
+### Media servers — Plex & Jellyfin
+
+```yaml
+plex:
+  image: lscr.io/linuxserver/plex:latest
+  container_name: plex
+  network_mode: host
+  runtime: nvidia
+  environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=America/Montevideo
+    - VERSION=docker
+    - NVIDIA_VISIBLE_DEVICES=all
+  volumes:
+    - ./config:/config
+    - /mediaFolder:/mediaFolder
+    - /mnt/media:/mediaRoot
+    - /mnt/mediaB:/mediaB
+  restart: unless-stopped
+```
+
+The `runtime: nvidia` line enables GPU-accelerated transcoding. This requires the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) to be installed on the host. I have a Plex lifetime pass, which unlocks hardware transcoding — the GPU handles all real-time transcoding when a client can't direct play, so the CPU stays free. This is the main transcoding in my stack; Tdarr is only used for manual file fixes, not bulk encoding.
+
+Plex mounts both drives so it can serve media from either location.
+
+```yaml
+jellyfin:
+  image: jellyfin/jellyfin
+  container_name: jellyfin
+  user: 1000:1000
+  network_mode: host
+  volumes:
+    - ./jellyfin:/config
+    - ./jellyfin/cache:/cache
+    - type: bind
+      source: /mnt/media
+      target: /media
+      read_only: true
+  restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+```
+
+I run both Plex and Jellyfin. Plex is the primary server — better client app support, especially on smart TVs. Jellyfin is the fully open-source alternative that I use as a backup and for testing. Note Jellyfin's media mount is `read_only: true` — it only needs to read files, not modify them.
+
+### Requests & monitoring — Overseerr & Tautulli
+
+```yaml
+overseerr:
+  image: sctx/overseerr:latest
+  container_name: overseerr
+  environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=America/Montevideo
+  volumes:
+    - ./overseerr:/app/config
+  ports:
+    - 5055:5055
+  restart: unless-stopped
+  networks:
+    - media_network
+```
+
+Overseerr is the only service I expose publicly (behind a reverse proxy with auth). Family members use it to request movies and shows. It connects to Plex for library awareness (so it knows what you already have), and to Sonarr/Radarr to submit the actual download requests.
+
+```yaml
+tautulli:
+  image: lscr.io/linuxserver/tautulli:latest
+  container_name: tautulli
+  environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=America/Montevideo
+  volumes:
+    - ./tautulli:/config
+  ports:
+    - 8181:8181
+  restart: unless-stopped
+```
+
+Tautulli hooks into Plex's API and logs everything — play history, stream quality, user activity, bandwidth usage. It can also send notifications when someone starts watching something or when playback has issues.
+
+### File fixes — Tdarr
+
+```yaml
+tdarr:
+  container_name: tdarr
+  image: ghcr.io/haveagitgat/tdarr:latest
+  restart: unless-stopped
+  network_mode: bridge
+  ports:
+    - 8265:8265
+    - 8266:8266
+  environment:
+    - TZ=America/Montevideo
+    - PUID=1000
+    - PGID=1000
+    - UMASK_SET=002
+    - serverIP=0.0.0.0
+    - serverPort=8266
+    - webUIPort=8265
+    - internalNode=true
+    - inContainer=true
+    - ffmpegVersion=6
+    - nodeName=HomeServerNode
+  volumes:
+    - ./tdarr/server:/app/server
+    - ./tdarr/configs:/app/configs
+    - ./tdarr/logs:/app/logs
+    - /mnt/media/media:/media
+    - /transcode_cache:/temp
+```
+
+Tdarr runs as a server with a built-in worker node (`internalNode=true`). I use it to manually fix file format problems — wrong containers, broken metadata, incompatible audio tracks. It's not running 24/7 bulk transcoding since Plex handles real-time transcoding via the GPU. But when a file won't play correctly or has format issues, Tdarr is the tool to fix it.
+
+The `/transcode_cache` mount is where Tdarr writes temporary files while processing. Point this at a fast drive with enough space — don't put it on the same drive as your media.
+
+### File management — FileBrowser
+
+```yaml
+filebrowser:
+  image: filebrowser/filebrowser
+  container_name: filebrowser
+  ports:
+    - "8478:80"
+  volumes:
+    - /mnt/media:/srv/nvme:rw
+    - /mnt/mediaB:/srv/hddB:rw
+  environment:
+    - FB_USERNAME=your-username
+  restart: unless-stopped
+```
+
+FileBrowser gives you a web UI to browse, upload, download, and manage files on your server. I mount both drives so I can manage media files without SSH-ing into the server. Useful for manual cleanup — deleting sample files, checking folder structure, bulk renaming.
+
+## Setting it up from scratch
+
+If you're starting fresh, here's the order I'd recommend:
+
+### 1. Prepare your storage
+
+Create your media directory structure before starting any containers:
+
+```bash
+# On your media drive(s)
+mkdir -p /mnt/media/media/downloads
+mkdir -p /mnt/media/media/tv
+mkdir -p /mnt/mediaB/media/movies
+```
+
+Make sure the directories are owned by the user matching your `PUID`/`PGID` (usually 1000:1000):
+
+```bash
+chown -R 1000:1000 /mnt/media/media
+chown -R 1000:1000 /mnt/mediaB/media
+```
+
+### 2. Start the core services
+
+Bring up the stack:
+
+```bash
+docker compose up -d
+```
+
+Then configure in this order:
+
+### 3. Configure qBittorrent
+
+Open `http://your-server:8080`. First login password is printed in the container logs:
+
+```bash
+docker logs qbittorrent
+```
+
+Set your download path to `/mediaFolder/downloads`. Enable the Web UI and set a proper password.
+
+### 4. Configure Prowlarr
+
+Open `http://your-server:9696`. Add your indexers. Then go to **Settings > Apps** and add Sonarr and Radarr as applications. Prowlarr will sync your indexers to both automatically.
+
+If any of your indexers use Cloudflare protection, go to **Settings > Indexer Proxies** and add FlareSolverr at `http://flaresolverr:8191`.
+
+### 5. Configure Sonarr & Radarr
+
+Open Sonarr at `http://your-server:8989` and Radarr at `http://your-server:7878`.
+
+For each one:
+- **Settings > Media Management** — add your root folder (`/mediaFolder` for Sonarr, `/mediaFolder` for Radarr)
+- **Settings > Download Clients** — add qBittorrent at `http://qbittorrent:8080`
+- Indexers should already be synced from Prowlarr
+
+### 6. Configure Plex / Jellyfin
+
+Add your media libraries pointing to the mounted directories. For Plex, enable hardware transcoding in **Settings > Transcoder** if you have the NVIDIA runtime set up.
+
+### 7. Configure Overseerr
+
+Open `http://your-server:5055`. Connect it to your Plex server first (for library sync), then add Sonarr and Radarr as services. Set up user access and you're done — share this URL with anyone who should be able to make requests.
+
+### 8. Configure Tautulli
+
+Open `http://your-server:8181`. Point it at your Plex server. It'll start collecting data immediately.
+
+## Lessons from running this for a while
+
+**Use a reverse proxy.** I use one to expose Overseerr and a few other services externally with HTTPS. Nginx Proxy Manager or Caddy both work well for this.
+
+**Back up your config directories.** Every service stores its configuration and database in its `./config*` folder. A simple cron job that tars these up weekly will save you hours of reconfiguration if a drive fails.
+
+**PUID/PGID matters more than you think.** File permission issues are the #1 cause of "downloaded but won't import" problems. Make sure all your services run as the same user, and that user owns your media directories.
+
+**Two drives, two strategies.** My NVMe handles downloads and TV shows (frequent small writes), while the HDD handles the movie library (large files, infrequent access). This keeps the NVMe responsive during heavy download periods.
+
+**Don't skip Prowlarr.** Managing indexers individually in Sonarr and Radarr is tedious. Prowlarr centralizes this. Add an indexer once, it syncs everywhere.
+
+**Plex lifetime pass is worth it.** GPU transcoding is a game changer. Without it, every transcode eats your CPU. With an NVIDIA GPU and the lifetime pass, Plex offloads transcoding entirely — multiple simultaneous streams without breaking a sweat.
+
+## Port reference
+
+Quick reference for all the Web UIs:
+
+| Service | Port | URL |
+|---|---|---|
+| qBittorrent | 8080 | `http://server:8080` |
+| Prowlarr | 9696 | `http://server:9696` |
+| Jackett | 9117 | `http://server:9117` |
+| Sonarr | 8989 | `http://server:8989` |
+| Radarr | 7878 | `http://server:7878` |
+| Overseerr | 5055 | `http://server:5055` |
+| Tautulli | 8181 | `http://server:8181` |
+| Tdarr | 8265 | `http://server:8265` |
+| FileBrowser | 8478 | `http://server:8478` |
+| FlareSolverr | 8191 | `http://server:8191` |
+| Plex | 32400 | `http://server:32400/web` |
+| Jellyfin | 8096 | `http://server:8096` |
+
+## The full compose file
+
+For reference, here's the complete `docker-compose.yml`:
+
+```yaml
+version: "2.1"
+services:
+  dashboarr-backend:
+    image: ghcr.io/renzobeux/dashboarr-backend:latest
+    container_name: dashboarr-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./dashboarr:/data
+    environment:
+      - LOG_LEVEL=info
+      - PUBLIC_URL=https://dashboarr.server.com
+
+  filebrowser:
+    image: filebrowser/filebrowser
+    container_name: filebrowser
+    ports:
+      - "8478:80"
+    volumes:
+      - /mnt/media:/srv/nvme:rw
+      - /mnt/mediaB:/srv/hddB:rw
+    environment:
+      - FB_USERNAME=your-username
+    restart: unless-stopped
+
+  jellyfin:
+    image: jellyfin/jellyfin
+    container_name: jellyfin
+    user: 1000:1000
+    network_mode: "host"
+    volumes:
+      - ./jellyfin:/config
+      - ./jellyfin/cache:/cache
+      - type: bind
+        source: /mnt/media
+        target: /media
+        read_only: true
+    restart: "unless-stopped"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    network_mode: host
+    runtime: nvidia
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Montevideo
+      - VERSION=docker
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ./config:/config
+      - /mediaFolder:/mediaFolder
+      - /mnt/media:/mediaRoot
+      - /mnt/mediaB:/mediaB
+    restart: unless-stopped
+
+  overseerr:
+    image: sctx/overseerr:latest
+    container_name: overseerr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Montevideo
+    volumes:
+      - ./overseerr:/app/config
+    ports:
+      - 5055:5055
+    restart: unless-stopped
+    networks:
+      - media_network
+
+  tautulli:
+    image: lscr.io/linuxserver/tautulli:latest
+    container_name: tautulli
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Montevideo
+    volumes:
+      - ./tautulli:/config
+    ports:
+      - 8181:8181
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_HTML=${LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+      - TZ=America/Montevideo
+    ports:
+      - "${PORT:-8191}:8191"
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=1026
+      - PGID=101
+      - TZ=America/Montevideo
+    volumes:
+      - ./configProwlarr:/config
+    ports:
+      - 9696:9696
+    restart: unless-stopped
+    depends_on:
+      - qbittorrent
+    networks:
+      - media_network
+
+  jackett:
+    container_name: jackett
+    restart: unless-stopped
+    ports:
+      - 9117:9117
+    volumes:
+      - ./configJackett:/config
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Montevideo
+    image: linuxserver/jackett
+    networks:
+      - media_network
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Montevideo
+      - WEBUI_PORT=8080
+    volumes:
+      - ./configTorrent:/config
+      - /mnt/media/media/downloads:/mediaFolder/downloads
+      - /mnt/mediaB/media/movies:/mediaFolder/movies
+    ports:
+      - 8080:8080
+      - 6881:6881
+      - 6881:6881/udp
+    restart: unless-stopped
+    networks:
+      - media_network
+
+  sonarr:
+    image: ghcr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Montevideo
+    volumes:
+      - ./configSonarr:/config
+      - /mnt/media/media:/mediaFolder
+    ports:
+      - 8989:8989
+    restart: unless-stopped
+    networks:
+      - media_network
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Montevideo
+    volumes:
+      - ./configRadarr:/config
+      - /mnt/mediaB/media:/mediaFolder
+      - /mnt/media/media/downloads:/mediaFolder/downloads
+    ports:
+      - 7878:7878
+    restart: unless-stopped
+    networks:
+      - media_network
+
+  tdarr:
+    container_name: tdarr
+    image: ghcr.io/haveagitgat/tdarr:latest
+    restart: unless-stopped
+    network_mode: bridge
+    ports:
+      - 8265:8265
+      - 8266:8266
+    environment:
+      - TZ=America/Montevideo
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=002
+      - serverIP=0.0.0.0
+      - serverPort=8266
+      - webUIPort=8265
+      - internalNode=true
+      - inContainer=true
+      - ffmpegVersion=6
+      - nodeName=HomeServerNode
+    volumes:
+      - ./tdarr/server:/app/server
+      - ./tdarr/configs:/app/configs
+      - ./tdarr/logs:/app/logs
+      - /mnt/media/media:/media
+      - /transcode_cache:/temp
+
+networks:
+  media_network:
+    driver: bridge
+```

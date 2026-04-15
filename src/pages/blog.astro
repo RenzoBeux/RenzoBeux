@@ -1,0 +1,51 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import BlogCard from "../components/BlogCard.astro";
+import AnimatedSection from "../components/AnimatedSection";
+import { getCollection } from "astro:content";
+import { getReadTime } from "../lib/utils";
+
+const posts = (await getCollection("blog"))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+---
+
+<BaseLayout
+  title="Blog — Renzo Beux"
+  description="Articles about self-hosting, DevOps, open source, and software engineering."
+>
+  <section class="mx-auto max-w-6xl px-6 pb-20 pt-32 md:pb-28 md:pt-40">
+    <AnimatedSection client:visible>
+      <h1
+        class="mb-4 text-4xl font-bold tracking-tight text-text-primary md:text-5xl"
+      >
+        Blog
+      </h1>
+    </AnimatedSection>
+    <AnimatedSection client:visible>
+      <p class="mb-12 max-w-2xl text-lg text-text-secondary">
+        Writing about self-hosting, Docker, open source, and the things I learn
+        while building stuff.
+      </p>
+    </AnimatedSection>
+
+    {
+      posts.length === 0 ? (
+        <p class="text-text-tertiary">No posts yet. Stay tuned!</p>
+      ) : (
+        <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {posts.map((post) => (
+            <BlogCard
+              title={post.data.title}
+              description={post.data.description}
+              date={post.data.date}
+              tags={post.data.tags}
+              slug={post.id}
+              readTime={getReadTime(post.body ?? "")}
+            />
+          ))}
+        </div>
+      )
+    }
+  </section>
+</BaseLayout>

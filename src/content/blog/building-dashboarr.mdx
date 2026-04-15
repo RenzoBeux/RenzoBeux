@@ -1,0 +1,165 @@
+---
+title: "Building Dashboarr: A Mobile App to Rule Your Self-Hosted Media Stack"
+description: "How I built an open-source React Native app to manage qBittorrent, Radarr, Sonarr, Plex, and more from a single mobile interface."
+date: "2026-04-15"
+tags: ["react-native", "expo", "self-hosting", "open-source", "typescript"]
+---
+
+# Building Dashboarr: A Mobile App to Rule Your Self-Hosted Media Stack
+
+If you self-host your media stack, you know the pain. Checking downloads in qBittorrent, browsing requests in Overseerr, monitoring streams in Tautulli, searching for movies in Radarr — each service has its own web UI, its own tab, its own login flow. On mobile, it's even worse.
+
+I wanted one app that talks to all of them. So I built **Dashboarr** — an open-source mobile app for Android and iOS that manages your entire media stack from a single interface.
+
+## The Problem
+
+My daily self-hosting workflow looked like this:
+
+1. Open browser, navigate to qBittorrent — check download progress
+2. New tab, Radarr — see if that movie I added finished downloading
+3. Another tab, Sonarr — check tonight's airing schedule
+4. Open Tautulli — who's streaming right now?
+5. Overseerr — any new requests from family?
+
+Five services, five tabs, five different UIs. On my phone? Forget it. Most of these web UIs aren't mobile-friendly, and apps like nzb360 — while great — are Android-only and closed-source.
+
+I needed something cross-platform, open-source, and built around _my_ stack.
+
+## What Dashboarr Does
+
+Dashboarr connects directly to your service APIs using your existing API keys. No cloud, no middleman, no account creation. Your phone talks to your server.
+
+**Supported services:**
+
+- **qBittorrent** — Full queue management: pause, resume, delete, speed stats, transfer progress
+- **Radarr** — Search and add movies, monitor status, view queue, track missing/wanted
+- **Sonarr** — Search and add shows, episode management, airing calendar
+- **Overseerr** — Browse trending media, make requests, approve/decline
+- **Tautulli** — Active Plex streams, bandwidth stats, playback history
+- **Prowlarr** — Indexer status, search across all indexers, grab releases
+- **Plex** — Now playing, recently added, on deck, library browsing
+- **Glances** — Server CPU, RAM, disk, and network stats right on the dashboard
+- **Bazarr** — Missing subtitles at a glance
+
+Every service is optional. Disable what you don't use, and the tabs disappear. The dashboard is fully customizable — reorder cards, hide what you don't need.
+
+## Tech Decisions and Why
+
+### Expo (Managed Workflow)
+
+I chose Expo SDK 54 with the managed workflow because I wanted to ship to both platforms without maintaining Xcode and Android Studio projects. EAS Build handles the native compilation, and Expo Router gives me file-based routing that feels natural coming from Next.js.
+
+The tradeoff? Some native modules are harder to integrate. But for an app that's primarily HTTP calls and UI, Expo's managed workflow covers everything I need — including secure storage, haptics, notifications, and network detection.
+
+### NativeWind (Tailwind for React Native)
+
+Styling React Native with `StyleSheet.create` is painful. NativeWind v4 brings Tailwind's utility classes to React Native, and the developer experience is night and day. Instead of:
+
+```tsx
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: "#1a1a2e",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+});
+```
+
+I write:
+
+```tsx
+<View className="bg-[#1a1a2e] rounded-xl p-4 mb-2">
+```
+
+Same result, far less boilerplate.
+
+### TanStack Query for Everything
+
+Every service interaction flows through TanStack Query v5. This was the single best architectural decision in the project.
+
+The data flow is layered:
+
+```
+services/*.ts    → Raw API calls (fetch wrappers)
+hooks/use-*.ts   → TanStack Query wrappers (caching, polling, mutations)
+components/      → React components consuming hooks
+```
+
+For example, qBittorrent's speed stats poll every 2 seconds while the dashboard is active. Active torrents refresh every 5 seconds. Calendar data refreshes every 60 seconds. TanStack Query handles all of this — plus automatic pause when the app goes to background, cache invalidation on mutations, and stale data management.
+
+```tsx
+export function useQBittorrentTransferInfo() {
+  const config = useConfigStore();
+  return useQuery({
+    queryKey: ["qbittorrent", "transfer"],
+    queryFn: () => getTransferInfo(config),
+    refetchInterval: 2000,
+    enabled: config.services.qbittorrent.enabled,
+  });
+}
+```
+
+No manual polling loops. No cleanup logic. No memory leaks.
+
+### Zustand + SecureStore for Config
+
+All configuration lives in a Zustand store that syncs to AsyncStorage on every change. But API keys and passwords get special treatment — they're stored in `expo-secure-store`, which uses the device's secure enclave (Keychain on iOS, Keystore on Android).
+
+The config also supports versioned migrations. When I add a new service or change the schema, a migration chain upgrades old configs automatically:
+
+```
+v0 (pre-versioning) → v1 → v2 → v3 → v4
+```
+
+Users can export their entire config as a backup and import it on another device. The import detects the version and runs the necessary migrations before applying.
+
+## The Optional Backend
+
+Dashboarr's core is 100% client-side. But there's one thing a phone can't do well: **push notifications when the app is closed**.
+
+To solve this, I built an optional companion backend — a self-hosted Node.js service (Fastify + SQLite) that you can run alongside your stack via Docker.
+
+The pairing flow:
+
+1. Backend generates a QR code on startup
+2. Phone scans the QR code
+3. They exchange a shared secret
+4. Phone pushes its service config to the backend
+5. Backend polls your services on a schedule and sends push notifications via Expo's push service
+
+The backend also accepts webhooks from Radarr, Sonarr, Overseerr, and others — so notifications can be near-instant instead of waiting for the next poll cycle.
+
+Deduplication prevents the same event from firing twice (once from the webhook, once from the poller). It's a small detail, but it matters.
+
+## Network Switching
+
+Most self-hosters have two URLs for each service: a local IP for when you're home, and a remote domain (usually behind a reverse proxy) for when you're away.
+
+Dashboarr handles this automatically. You configure your home WiFi SSID, and the app detects which network you're on via `expo-location`. When you're on your home network, it uses local URLs. When you're not, it switches to remote URLs. Per service.
+
+You can also toggle manually if auto-detection isn't your thing.
+
+## Dark Mode Only
+
+This was a deliberate choice, not laziness. The app is designed for checking your media stack from the couch at night. Bright white UIs have no place here. Every screen, every component, every card is dark-first. OLED screens get true blacks.
+
+## What I Learned
+
+**File-based routing is great for mobile too.** Expo Router v6 brings the Next.js mental model to React Native. Nested layouts, dynamic routes, typed params — it all works. The `(tabs)` group convention for bottom navigation is elegant.
+
+**TanStack Query replaces 80% of what you'd use Redux for.** If your state is server state (and in a media manager app, almost all of it is), you don't need a heavy state management solution. Zustand handles the remaining 20% (local config, UI state) with minimal boilerplate.
+
+**Expo's managed workflow has matured significantly.** Two years ago, I would have ejected for half the features in this app. Today, custom Expo config plugins let me modify native build configurations without leaving the managed workflow. I have a plugin that handles Android keystore signing, and it just works.
+
+**Self-hosters appreciate simplicity.** No account creation, no cloud sync, no analytics. Install it, point it at your services, done. The app stores nothing outside your device and your server.
+
+## Try It
+
+Dashboarr is open source under GPL-3.0.
+
+- **GitHub:** [renzobeux/Dashboarr](https://github.com/renzobeux/Dashboarr)
+- **Android:** Available on [Google Play Store](https://play.google.com/store/apps/details?id=com.dashboarr.app) (closed testing)
+- **iOS:** Coming soon
+
+If you run a media stack and want a single mobile app to manage it all — give it a shot. PRs and issues welcome.
