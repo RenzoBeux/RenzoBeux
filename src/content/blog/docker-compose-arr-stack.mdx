@@ -6,6 +6,8 @@ tags: ["docker", "self-hosting", "homelab", "arr-stack", "plex", "jellyfin"]
 draft: false
 ---
 
+import Mermaid from "../../components/Mermaid";
+
 This is my actual media server stack. Not a minimal example, not a getting-started template — the real thing, running on a home server with two drives, an NVIDIA GPU, and over a dozen containers working together.
 
 I'll walk through the architecture, explain every service and how they connect, and share the Docker Compose file piece by piece so you can adapt it to your own setup.
@@ -30,17 +32,16 @@ The key idea: you request a movie or TV show, and the stack finds it, downloads 
 
 Here's how data flows through the stack:
 
-```
-  Request                Search              Download            Serve
-  ───────                ──────              ────────            ─────
-
- Overseerr ──────▶ Sonarr / Radarr ──────▶ qBittorrent ──────▶ Plex
- (requests)        (media managers)         (torrent client)    Jellyfin
-                          │                                       ▲
-                          ▼                                       │
-                      Prowlarr ◀── FlareSolverr          Tdarr ──┘
-                      (indexers)   (CAPTCHA bypass)    (file fixes)
-```
+<Mermaid
+  client:only="react"
+  chart={`flowchart TD
+    O["Overseerr<br/><i>requests</i>"] --> SR["Sonarr / Radarr<br/><i>media managers</i>"]
+    SR --> Q["qBittorrent<br/><i>torrent client</i>"]
+    Q --> P["Plex / Jellyfin<br/><i>media servers</i>"]
+    SR --> PR["Prowlarr<br/><i>indexers</i>"]
+    FS["FlareSolverr<br/><i>CAPTCHA bypass</i>"] --> PR
+    T["Tdarr<br/><i>file fixes</i>"] --> P`}
+/>
 
 **Prowlarr** is the hub for indexer management. You configure your indexers once in Prowlarr, and it syncs them to Sonarr and Radarr automatically. When Sonarr wants a TV episode, it queries Prowlarr, which searches across all your indexers and returns results. Sonarr picks the best match and sends it to qBittorrent for download.
 
