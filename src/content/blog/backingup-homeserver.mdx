@@ -1,0 +1,114 @@
+---
+title: "Backing up an 18-stack homelab to Backblaze B2 with restic"
+description: "A pragmatic, encrypted, off-site backup for a Docker Compose homelab — what to back up, what to skip, and the per-database tricks that make restores reliable."
+date: 2026-05-12
+tags: ["homelab", "backup", "restic", "backblaze", "docker", "postgres", "devops", "disaster-recovery"]
+draft: false
+---
+
+# Backing up an 18-stack homelab to Backblaze B2 with restic
+
+My homelab grew the way most homelabs do: one Docker Compose stack at a time. After a year, I had eighteen of them — media (Plex, Jellyfin, the *arr suite), photos (Immich), an NVR (Frigate), face recognition (CompreFace), monitoring (Prometheus + Grafana), a few databases, a TeamSpeak server, two game servers, plus the random utility containers that always sneak in.
+
+What I did not have was a backup.
+
+When I sat down to fix that, the obvious "just rsync everything" plan turned out to be wrong in interesting ways. This is what I built instead, and the trade-offs that drove each decision.
+
+## What "backup" actually means
+
+The first useful question wasn't "how do I back this up" but "what's actually irreplaceable?" The answer split cleanly into three buckets:
+
+| Bucket | Examples | Backed up? |
+|---|---|---|
+| **Irreplaceable** (~10 GB) | Stack configs, `.env` secrets, every database, app state | Yes — daily |
+| **Regenerable from a source of truth** (~50 GB) | Frigate camera recordings, Ollama model files, Tdarr transcode cache, ML model weights | No — re-derivable |
+| **Bulk media** (~8 TB) | Movies, TV, music, photos | No — separate strategy |
+
+This is the most important architectural call: **bulk media is out of scope.** Storing it off-site at scale is expensive, and the *download pipeline* is itself the source of truth — Sonarr and Radarr know how to refetch anything that goes missing, given their config DBs (which are in the backup). Photos in Immich are the partial exception; they get a separate local-RAID strategy that I'll write up another time.
+
+Cutting media out shrank the daily backup target by three orders of magnitude. That changed every other decision downstream.
+
+## Architecture in three phases
+
+The whole system is one shell script invoked once a day by cron. It does three things in order:
+
+1. **Dump** every database into a 0700 staging directory.
+2. **Snapshot** a curated set of paths — staging plus selected bind mounts — to an encrypted [restic](https://restic.net) repository on Backblaze B2.
+3. **Prune** older snapshots once a week according to a retention policy.
+
+Total runtime is around 2 minutes. The daily delta is a few hundred KB to a few MB, depending on how much database churn there's been.
+
+## The interesting part: heterogeneous database dumps
+
+This is where most "just rsync the data dir" backup plans go wrong. Copying live database files while the engine is writing to them produces corrupt copies — sometimes silently. Different engines need different tricks:
+
+| Engine | Cases | Approach |
+|---|---|---|
+| **Postgres** (multi-DB cluster) | Local cluster with 11 user databases | `pg_dumpall` via `docker exec` (single-DB `pg_dump` would silently lose 10 of them) |
+| **Postgres** (single-DB) | One application database with extensions | `pg_dump --clean --if-exists` |
+| **Postgres** (managed/remote) | Provider-managed instance | Throwaway client container (`docker run --rm postgres:17 pg_dump`) — the image must match or exceed the server major version |
+| **MariaDB** | Single-server multi-DB | `mariadb-dump --single-transaction` (online, lock-free for InnoDB) |
+| **Redis** | Bind-mount data dir | `BGSAVE` + poll `LASTSAVE` until the new RDB is on disk; tar it from inside the container to sidestep host UID issues |
+| **Redis** | Anonymous Docker volume | Same `BGSAVE` dance, then stream the RDB out via `docker exec cat` |
+| **SQLite** | Apps that hold the file open | Python's stdlib `sqlite3.Connection.backup()` — the only online-safe SQLite copy method |
+| **App-native** | Sonarr / Radarr / Prowlarr | Trigger their built-in backup via REST API (`POST /api/v3/command {"name":"Backup"}`), then ship the resulting zip — gives you `config.xml` for free |
+| **Distroless container** | Grafana, Portainer | Brief `docker stop` → `docker cp` → `docker start`. ~3-second downtime is acceptable for tools used by one person |
+
+The orchestrator runs every dump as a separate stage and is **fail-soft**: one broken container does not abort the whole night. Failures are logged, surfaced via a Healthchecks.io ping, and visible in the Prometheus textfile collector. Restic itself is fail-fast — if the upload errors, the run errors.
+
+## Why restic over the alternatives
+
+I considered four families:
+
+- **Plain rsync + `pg_dump` scripts.** Simplest, no new tools. No encryption, no deduplication, no snapshots. Fine if you only need yesterday's data and storage is local.
+- **Borg.** Similar feature set to restic. Better local performance, weaker cloud-storage support.
+- **Duplicati / Kopia.** Web UI for browsing and restoring. Duplicati has had real reliability issues historically; Kopia is solid but newer.
+- **restic.** Single Go binary, encrypted by default with AES-256, content-addressable storage gives transparent deduplication, native backends for B2/S3/Azure/GCS/SFTP, mountable snapshots via FUSE.
+
+Restic won on operational simplicity. One binary, one repo, one config file. The whole thing is a few-hundred-line shell script and never a moving target — which is exactly what I want from infrastructure I touch four times a year.
+
+## Storage cost: under the free tier
+
+After deduplication and compression, the working set is about 2 GB. Backblaze B2's first 10 GB are free indefinitely, and egress is free up to 3× your stored size per month — which means a full disaster restore is also free. Even if the repo grew to 30 GB I'd be paying about $0.12/month.
+
+This is what made the "configs only" scope so attractive: the 8 TB of media that I left out of scope would have cost real money to mirror; the 10 GB that's actually irreplaceable costs nothing.
+
+## Failure modes I designed for
+
+A backup script that nobody ever looks at is a backup script that has been silently broken for six months. So:
+
+- **Failed dumps don't kill the run.** A snapshot with 14 of 16 databases is still useful.
+- **Healthchecks.io ping** on success, `/fail` ping on partial failure, missed-ping email if the host is down entirely.
+- **Optional Prometheus textfile metrics** (`backup_last_success_timestamp_seconds`, `backup_duration_seconds`, `backup_repo_size_bytes`) so the existing Grafana dashboard knows about backups too.
+- **Documented restore runbook** with a per-engine restore command for every database in scope. Trust in restic isn't enough; the recipe for using it has to live somewhere accessible.
+- **The runbook lives outside the encrypted repo.** Storing it inside is a chicken-and-egg problem. It goes in a password manager and a separate plaintext folder in the same B2 bucket.
+
+## Disaster recovery in about two hours
+
+The realistic path from blank hardware to "it's running again":
+
+1. Fresh OS install, then `apt install docker.io docker-compose-plugin restic`
+2. Recreate the host user with the same UID, the external Docker network, and any disk mount points
+3. Set the four B2/restic environment variables from the password manager
+4. `restic restore latest --target /`
+5. For each stack: bring up the database container, pipe in the dump
+6. `docker compose up -d` per stack to fetch images and start everything
+
+Roughly two hours. Bulk media — the part deliberately not in the backup — refills itself over time as Sonarr and Radarr re-grab anything missing.
+
+## What I'd improve next
+
+- **Second off-site copy** in a different provider, for ransomware/account-loss insurance. `restic copy` makes this a one-liner.
+- **Restore drill on a cadence.** A backup you've never restored from is a hypothesis, not a backup. I want to schedule a quarterly test-restore to a throwaway VM.
+- **Bulk media on a separate strategy** — likely a second on-host disk or a NAS, with `rsync --link-dest` for cheap incrementals. Different problem, different tool.
+
+## Takeaways
+
+- Decide what you're actually trying to protect *before* you pick the tool. The scope decision is more important than the technology.
+- Heterogeneous workloads need heterogeneous capture strategies — there is no universal "back up a database" command.
+- Encryption belongs at the client, not at the storage provider. The provider can be compromised; your password can be in your head.
+- A backup that's never been restored from is not a backup. Build the restore path into the design from day one, and document it somewhere that survives the disaster.
+
+---
+
+*Stack used: restic, Backblaze B2, Docker Compose, Postgres 14/17, MariaDB, Redis/Valkey, SQLite, Bash, cron, Prometheus, Grafana, Healthchecks.io.*
