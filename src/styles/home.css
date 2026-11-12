@@ -256,6 +256,13 @@ html:not(.scrub) .beux-outline {
   line-height: 0.92;
   letter-spacing: -0.05em;
 }
+.panel-logo {
+  display: block;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 1.5rem;
+  border-radius: 22%;
+}
 .panel p {
   max-width: 42ch;
   margin-bottom: 1.375rem;
@@ -384,6 +391,32 @@ html:not(.scrub) .beux-outline {
 .split-owes div.on {
   color: var(--color-text-primary);
   opacity: 1;
+}
+
+.fire-chart {
+  position: relative;
+  height: 96px;
+  margin-bottom: 0.5rem;
+}
+.fire-chart::before {
+  content: "";
+  position: absolute;
+  inset: 14.5% 0 auto;
+  border-top: 1px dashed var(--color-border);
+}
+.fire-chart svg {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.fire-chart path {
+  fill: none;
+  stroke: var(--color-accent-hover);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
 .svc-rows div {
@@ -591,6 +624,17 @@ html:not(.scrub) .beux-outline {
     align-items: flex-start;
     padding-top: 7.25rem;
   }
+  .panel-logo {
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-bottom: 1rem;
+  }
+  .fire-chart {
+    height: 56px;
+  }
+  .fire-rows div:first-child {
+    display: none;
+  }
   .split-bar {
     height: 32px;
   }
@@ -628,5 +672,10 @@ html:not(.scrub) .beux-outline {
   }
   .scrub .panel-tags {
     display: none;
+  }
+  .scrub .panel-logo {
+    width: 2.25rem;
+    height: 2.25rem;
+    margin-bottom: 0.625rem;
   }
 }

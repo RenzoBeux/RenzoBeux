@@ -31,7 +31,12 @@ const containers = ["prowlarr", "sonarr", "radarr", "qbittorrent", "plex"];
         <article class="panel" data-viz={project.viz}>
           <div class="shell">
             <div class="panel-copy">
-              <h3>{project.title}</h3>
+              <h3>
+                {project.logo && (
+                  <img class="panel-logo" src={project.logo} alt="" width="56" height="56" loading="lazy" />
+                )}
+                {project.title}
+              </h3>
               <p>{project.description}</p>
               <div class="panel-tags">{project.tags.join(" · ")}</div>
               <div class="arrow-links">
@@ -97,6 +102,37 @@ const containers = ["prowlarr", "sonarr", "radarr", "qbittorrent", "plex"];
                         <em>{port}</em>
                       </div>
                     ))}
+                  </div>
+                </>
+              )}
+
+              {project.viz === "fire" && (
+                <>
+                  <div class="viz-head">
+                    <b>FIRE number</b>
+                    <span class="mono">$750,000</span>
+                  </div>
+                  <div class="fire-chart">
+                    <svg data-line viewBox="0 0 300 96" preserveAspectRatio="none">
+                      <path d="M0 90 C 90 86, 160 70, 215 42 S 280 16, 300 14" />
+                    </svg>
+                  </div>
+                  <div class="svc-rows fire-rows">
+                    <div class="on" data-step>
+                      <span>Spending</span>
+                      <em>$30,000 / yr</em>
+                    </div>
+                    <div class="on" data-step>
+                      <span>Years to go</span>
+                      <em>14</em>
+                    </div>
+                    <div class="on" data-step>
+                      <span>
+                        <i />
+                        Portfolio holds
+                      </span>
+                      <em>to age 95</em>
+                    </div>
                   </div>
                 </>
               )}

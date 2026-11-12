@@ -63,6 +63,7 @@ function init() {
     shares: $("[data-shares]", el),
     amounts: $$("[data-amt]", el),
     count: $("[data-count]", el),
+    line: $("[data-line]", el),
   }));
 
   const reveals = $$("[data-reveal]").map((el) => ({ el, top: 0 }));
@@ -122,6 +123,9 @@ function init() {
       const amount = `$${(32 * split).toFixed(2)}`;
       for (const el of panel.amounts) el.textContent = amount;
       setSteps(panel.steps, clamp((v - 0.6) / 0.4));
+    } else if (panel.kind === "fire") {
+      if (panel.line) panel.line.style.clipPath = `inset(-10% ${(1 - clamp(v / 0.65)) * 100}% -10% 0)`;
+      setSteps(panel.steps, clamp((v - 0.3) / 0.7));
     } else {
       const on = setSteps(panel.steps, v);
       if (panel.count) panel.count.textContent = String(on);

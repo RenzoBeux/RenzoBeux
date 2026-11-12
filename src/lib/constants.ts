@@ -26,7 +26,8 @@ export type Project = {
   tags: string[];
   links: ProjectLink[];
   /** Which scroll-driven mini demo sits next to the project. */
-  viz: "split" | "services" | "compose";
+  viz: "split" | "services" | "fire" | "compose";
+  logo?: string;
 };
 
 export const PROJECTS: Project[] = [
@@ -37,6 +38,7 @@ export const PROJECTS: Project[] = [
     tags: ["NestJS", "React", "Capacitor", "PostgreSQL"],
     links: [{ label: "spliteo.app", href: "https://www.spliteo.app" }],
     viz: "split",
+    logo: "/logos/spliteo.png",
   },
   {
     title: "Dashboarr",
@@ -55,6 +57,19 @@ export const PROJECTS: Project[] = [
       },
     ],
     viz: "services",
+    logo: "/logos/dashboarr.png",
+  },
+  {
+    title: "FIRE Planner",
+    description:
+      "Open-source financial independence calculator: your retirement number, how many years until you reach it, and whether the portfolio holds.",
+    tags: ["React", "TypeScript", "Vite", "Open Source"],
+    links: [
+      { label: "fire.renzobeux.dev", href: "https://fire.renzobeux.dev" },
+      { label: "Source", href: "https://github.com/RenzoBeux/InvestmentCalculator" },
+    ],
+    viz: "fire",
+    logo: "/logos/fire.svg",
   },
   {
     title: "*arr Stack",
