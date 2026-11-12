@@ -11,12 +11,15 @@ interface Props {
   title?: string;
   description?: string;
   ogImage?: string;
+  /** Home page: the hero name replaces the header wordmark until it scrolls into it. */
+  home?: boolean;
 }
 
 const {
   title = SITE.title,
   description = SITE.description,
   ogImage = SITE.ogImage,
+  home = false,
 } = Astro.props;
 ---
 
@@ -45,8 +48,14 @@ const {
     <link rel="canonical" href={Astro.url.href} />
     <title>{title}</title>
     <ClientRouter />
+    <!-- Enables the scroll-driven layout before first paint (see styles/home.css) -->
+    <script is:inline>
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        document.documentElement.classList.add("scrub");
+      }
+    </script>
   </head>
-  <body class="min-h-screen bg-bg text-text-primary">
+  <body class="min-h-screen bg-bg text-text-primary" data-home={home ? "" : undefined}>
     <Header />
     <main>
       <slot />

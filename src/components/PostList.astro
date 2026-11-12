@@ -1,0 +1,38 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { getReadTime } from "../lib/utils";
+
+interface Props {
+  posts: CollectionEntry<"blog">[];
+}
+
+const { posts } = Astro.props;
+
+const formatDate = (date: Date) =>
+  date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+---
+
+<ol class="post-list">
+  {
+    posts.map((post) => (
+      <li>
+        <a href={`/blog/${post.id}`} class="post-row" data-reveal>
+          <span class="post-meta mono">
+            <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
+            <span class="post-read">{getReadTime(post.body ?? "")}</span>
+          </span>
+          <span class="post-body">
+            <span class="post-title">{post.data.title}</span>
+            <span class="post-desc">{post.data.description}</span>
+          </span>
+          <span class="post-arrow" aria-hidden="true">→</span>
+        </a>
+      </li>
+    ))
+  }
+</ol>

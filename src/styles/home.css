@@ -1,0 +1,632 @@
+/*
+ * Home page.
+ *
+ * Without the `scrub` class on <html> (no JS, or prefers-reduced-motion) every
+ * section is a plain static block. `scrub` turns on the pinned, scroll-driven
+ * layout that scripts/home.ts animates.
+ */
+
+.shell {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: 1.5rem;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.arrow-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+}
+.arrow-links a {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--color-border);
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.arrow-links a:hover {
+  color: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* ---------- Header wordmark ---------- */
+
+.brand {
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  white-space: nowrap;
+}
+.brand span {
+  display: inline-block;
+}
+/* On the home page the morphing hero name stands in for the wordmark. */
+html.scrub body[data-home] .brand {
+  opacity: 0;
+}
+
+/* ---------- Scroll progress ---------- */
+
+.scroll-progress {
+  display: none;
+}
+.scrub .scroll-progress {
+  display: block;
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 70;
+  height: 2px;
+  background: var(--color-accent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+/* ---------- Hero ---------- */
+
+.hero-pin {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100svh;
+  padding-bottom: 7svh;
+}
+.scrub .hero {
+  height: 170svh;
+}
+.scrub .hero-pin {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+}
+
+.hero-name {
+  /* Pull the heavy capitals back so they line up optically with the body text. */
+  margin: 0 0 0 -0.035em;
+  font-size: clamp(4.5rem, min(27vw, 28svh), 17rem);
+  font-weight: 800;
+  line-height: 0.86;
+  letter-spacing: -0.045em;
+  color: var(--color-text-primary);
+}
+.hero-name span {
+  display: block;
+  width: max-content;
+}
+
+/*
+ * Outlined word. The fill is the page background painted over the stroke, so
+ * the overlapping contours inside variable-font glyphs stay hidden.
+ */
+.beux-outline {
+  color: var(--color-bg);
+  -webkit-text-stroke: max(2px, 0.014em) var(--color-text-tertiary);
+  paint-order: stroke fill;
+}
+html:not(.scrub) .beux-outline {
+  color: var(--color-accent-hover);
+  -webkit-text-stroke: 0;
+}
+
+.name-morph {
+  display: none;
+}
+.scrub .name-morph {
+  display: block;
+  margin: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  visibility: hidden;
+  pointer-events: none;
+}
+.morph-ready .name-morph {
+  visibility: visible;
+}
+.morph-ready #hero-name {
+  opacity: 0;
+}
+.name-morph .w {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
+  transform-origin: 0 0;
+}
+.name-morph .beux-fill {
+  position: absolute;
+  inset: 0;
+  color: var(--color-accent-hover);
+  /* Same stroke as the outline underneath, so no grey edge shows around the fill. */
+  -webkit-text-stroke: max(2px, 0.014em) var(--color-accent-hover);
+  paint-order: stroke fill;
+  clip-path: inset(-20% 100% -20% -5%);
+}
+
+.hero-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 3rem;
+  margin-top: 5svh;
+}
+.hero-foot p {
+  max-width: 34ch;
+  font-size: 1.0625rem;
+  color: var(--color-text-secondary);
+}
+.hero-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.hero-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+}
+
+/* ---------- About ---------- */
+
+.about {
+  padding-block: 16svh;
+}
+.about .eyebrow {
+  margin-bottom: 1.75rem;
+}
+.statement {
+  max-width: 20ch;
+  font-size: clamp(1.75rem, 4.6vw, 3.75rem);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.scrub .about {
+  height: 200svh;
+  padding-block: 0;
+}
+.scrub .about-pin {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100svh;
+}
+.scrub .statement span {
+  opacity: 0.16;
+}
+
+/* ---------- Projects ---------- */
+
+.projects {
+  position: relative;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-alt);
+}
+.stage-head {
+  padding-top: 5rem;
+}
+.stage-head .shell {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.stage-count,
+.ticks {
+  display: none;
+}
+.panel {
+  padding-block: 3.5rem;
+}
+.panel + .panel {
+  border-top: 1px solid var(--color-border);
+}
+.panel .shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  align-items: center;
+  gap: 3rem 4.5rem;
+}
+.panel h3 {
+  margin-bottom: 1.125rem;
+  font-size: clamp(2.75rem, 8vw, 6.5rem);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.05em;
+}
+.panel p {
+  max-width: 42ch;
+  margin-bottom: 1.375rem;
+  font-size: 1.0625rem;
+  color: var(--color-text-secondary);
+}
+.panel-tags {
+  margin-bottom: 1.625rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.scrub .projects {
+  height: calc((var(--n) + 1) * 100svh);
+}
+.scrub .stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+}
+.scrub .stage-head {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  padding-top: 4.75rem;
+}
+.scrub .stage-count {
+  display: inline;
+  margin-left: 0.75em;
+}
+.scrub .ticks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ticks i {
+  width: 22px;
+  height: 2px;
+  background: var(--color-border);
+  transition:
+    background 0.25s,
+    width 0.25s;
+}
+.ticks i.on {
+  width: 40px;
+  background: var(--color-accent-hover);
+}
+.scrub .panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding-block: 6rem 0;
+  border: 0;
+}
+.scrub .panel:not(:first-of-type) {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Project mini demos */
+.viz {
+  min-width: 0;
+  padding-top: 1.375rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.9375rem;
+}
+.viz-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1.125rem;
+}
+.viz-head b {
+  font-weight: 600;
+}
+
+.split-bar {
+  display: flex;
+  gap: 14px;
+  height: 44px;
+}
+.split-bar i {
+  flex: 1;
+  background: var(--color-accent);
+}
+.split-bar i:nth-child(2) {
+  background: var(--color-accent-hover);
+}
+.split-bar i:nth-child(3) {
+  background: #a5b4fc;
+}
+.split-shares {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 0.875rem;
+}
+.split-shares div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.split-shares small {
+  font-size: 0.8125rem;
+  color: var(--color-text-tertiary);
+}
+.split-owes {
+  margin-top: 1.25rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.875rem;
+}
+.split-owes div {
+  display: flex;
+  justify-content: space-between;
+  padding-block: 3px;
+  color: var(--color-text-tertiary);
+  opacity: 0.25;
+  transition:
+    opacity 0.3s,
+    color 0.3s;
+}
+.split-owes div.on {
+  color: var(--color-text-primary);
+  opacity: 1;
+}
+
+.svc-rows div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 0.6875rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  transition: color 0.3s;
+}
+.svc-rows div span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.svc-rows i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-border);
+  transition:
+    background 0.3s,
+    box-shadow 0.3s;
+}
+.svc-rows div.on {
+  color: var(--color-text-primary);
+}
+.svc-rows div.on i {
+  background: #4ade80;
+  box-shadow: 0 0 0 4px rgb(74 222 128 / 0.18);
+}
+.svc-rows em {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-style: normal;
+  color: var(--color-text-tertiary);
+}
+
+.term {
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.9;
+  white-space: nowrap;
+}
+.term div {
+  color: var(--color-text-tertiary);
+  opacity: 0.25;
+  transition:
+    opacity 0.25s,
+    color 0.25s;
+}
+.term div.on {
+  color: var(--color-text-secondary);
+  opacity: 1;
+}
+.term .cmd {
+  color: var(--color-text-primary);
+  opacity: 1;
+}
+.term b {
+  font-weight: 400;
+  color: #4ade80;
+}
+
+/* ---------- Writing ---------- */
+
+.writing {
+  padding-block: 14svh;
+  border-top: 1px solid var(--color-border);
+}
+.writing-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.post-list li {
+  border-top: 1px solid var(--color-border);
+}
+.post-list li:last-child {
+  border-bottom: 1px solid var(--color-border);
+}
+.post-row {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.5rem 2rem;
+  padding-block: 1.75rem;
+}
+.post-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+.post-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.post-title {
+  font-size: clamp(1.25rem, 2.4vw, 1.75rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  transition: color 0.15s;
+}
+.post-desc {
+  max-width: 62ch;
+  font-size: 0.9375rem;
+  color: var(--color-text-secondary);
+}
+.post-arrow {
+  font-size: 1.25rem;
+  color: var(--color-text-tertiary);
+  transition:
+    transform 0.2s,
+    color 0.15s;
+}
+.post-row:hover .post-title,
+.post-row:hover .post-arrow {
+  color: var(--color-accent-hover);
+}
+.post-row:hover .post-arrow {
+  transform: translateX(6px);
+}
+
+/* ---------- Skills ---------- */
+
+.skills {
+  padding-block: 14svh;
+  border-top: 1px solid var(--color-border);
+}
+.skills .eyebrow {
+  margin-bottom: 2.25rem;
+}
+.track-clip {
+  overflow: hidden;
+}
+.track {
+  display: flex;
+  gap: 0.6em;
+  width: max-content;
+  font-size: clamp(2.25rem, 7vw, 5.5rem);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+.track-ghost {
+  color: var(--color-bg);
+  -webkit-text-stroke: 2px var(--color-text-tertiary);
+  paint-order: stroke fill;
+}
+.track span::after {
+  content: "/";
+  margin-left: 0.6em;
+  color: var(--color-accent);
+  -webkit-text-stroke: 0;
+}
+
+/* ---------- Contact ---------- */
+
+.contact {
+  padding-block: 18svh 14svh;
+  border-top: 1px solid var(--color-border);
+}
+.contact-title {
+  margin-block: 1.125rem 2.5rem;
+  font-size: clamp(3rem, 11vw, 9rem);
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+.contact-title a {
+  background: linear-gradient(var(--color-accent-hover), var(--color-accent-hover)) 0 100% / 0%
+    0.06em no-repeat;
+  transition: background-size 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.contact-title a:hover {
+  background-size: 100% 0.06em;
+}
+
+/* ---------- Small screens ---------- */
+
+@media (max-width: 760px) {
+  .panel .shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+  }
+  .panel p {
+    margin-bottom: 0.875rem;
+    font-size: 0.9375rem;
+  }
+  .panel-tags {
+    margin-bottom: 1rem;
+  }
+  .scrub .panel {
+    align-items: flex-start;
+    padding-top: 7.25rem;
+  }
+  .split-bar {
+    height: 32px;
+  }
+  .svc-rows div {
+    padding-block: 0.4375rem;
+  }
+  .term {
+    line-height: 1.75;
+  }
+
+  .post-row {
+    grid-template-columns: minmax(0, 1fr);
+    padding-block: 1.375rem;
+  }
+  .post-meta {
+    flex-direction: row;
+    gap: 0.75rem;
+  }
+  .post-arrow {
+    display: none;
+  }
+}
+
+/* Short phones: keep each pinned project inside one screen. */
+@media (max-width: 760px) and (max-height: 640px) {
+  .scrub .panel {
+    padding-top: 6.25rem;
+  }
+  .scrub .panel .shell {
+    gap: 1.125rem;
+  }
+  .scrub .panel h3 {
+    margin-bottom: 0.625rem;
+    font-size: 2.25rem;
+  }
+  .scrub .panel-tags {
+    display: none;
+  }
+}

@@ -8,9 +8,8 @@ export const SITE = {
 };
 
 export const NAV_LINKS = [
-  { label: "Home", href: "/" },
-  { label: "Blog", href: "/blog" },
   { label: "Projects", href: "/#projects" },
+  { label: "Blog", href: "/blog" },
   { label: "Contact", href: "/#contact" },
 ] as const;
 
@@ -19,34 +18,51 @@ export const SOCIAL_LINKS = {
   github: "https://github.com/RenzoBeux",
 } as const;
 
+export type ProjectLink = { label: string; href: string };
+
 export type Project = {
   title: string;
   description: string;
   tags: string[];
-  url?: string;
-  github?: string;
+  links: ProjectLink[];
+  /** Which scroll-driven mini demo sits next to the project. */
+  viz: "split" | "services" | "compose";
 };
 
 export const PROJECTS: Project[] = [
   {
+    title: "Spliteo",
+    description:
+      "Split expenses with friends, roommates and family, and keep your own budgets in the same app. Multi-currency groups, on web, iOS and Android.",
+    tags: ["NestJS", "React", "Capacitor", "PostgreSQL"],
+    links: [{ label: "spliteo.app", href: "https://www.spliteo.app" }],
+    viz: "split",
+  },
+  {
     title: "Dashboarr",
     description:
-      "An open-source dashboard to manage and monitor your *arr stack. Built to simplify self-hosted media management.",
-    tags: ["Open Source", "Self-Hosting", "Docker", "TypeScript"],
-    github: "https://github.com/RenzoBeux/Dashboarr",
+      "Open-source mobile app for a self-hosted media stack. qBittorrent, Radarr, Sonarr, Plex and more from one screen.",
+    tags: ["Expo", "React Native", "TypeScript", "Open Source"],
+    links: [
+      { label: "Source", href: "https://github.com/RenzoBeux/Dashboarr" },
+      {
+        label: "App Store",
+        href: "https://apps.apple.com/us/app/dashboarr/id6762170117",
+      },
+      {
+        label: "Google Play",
+        href: "https://play.google.com/store/apps/details?id=com.dashboarr.app",
+      },
+    ],
+    viz: "services",
   },
   {
-    title: "*arr Stack Setup",
+    title: "*arr Stack",
     description:
-      "A fully connected self-hosted media stack using Docker Compose — Sonarr, Radarr, Prowlarr, and more, all orchestrated together.",
-    tags: ["Docker", "Docker Compose", "Self-Hosting", "Homelab"],
-  },
-  {
-    title: "Personal Website",
-    description:
-      "This website! Built with Astro, React, Tailwind CSS, and Motion. Dark mode, animated, and blog-ready.",
-    tags: ["Astro", "React", "Tailwind CSS", "TypeScript"],
-    github: "https://github.com/RenzoBeux/RenzoBeux",
+      "The Docker Compose setup behind my media server: Sonarr, Radarr, Prowlarr, qBittorrent, Plex and Jellyfin, wired together.",
+    tags: ["Docker Compose", "Self-Hosting", "Homelab"],
+    links: [{ label: "Read the write-up", href: "/blog/docker-compose-arr-stack" }],
+    viz: "compose",
   },
 ];
 
@@ -64,6 +80,7 @@ export const SKILLS: Skill[] = [
   { name: "Astro", category: "Frontend" },
   { name: "Tailwind CSS", category: "Frontend" },
   { name: "Node.js", category: "Backend" },
+  { name: "NestJS", category: "Backend" },
   { name: "PostgreSQL", category: "Backend" },
   { name: "Docker", category: "DevOps" },
   { name: "Docker Compose", category: "DevOps" },

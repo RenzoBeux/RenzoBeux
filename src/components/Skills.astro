@@ -1,0 +1,26 @@
+---
+import { SKILLS } from "../lib/constants";
+
+const rows = [
+  SKILLS.filter((s) => s.category !== "DevOps").map((s) => s.name),
+  SKILLS.filter((s) => s.category === "DevOps").map((s) => s.name),
+];
+---
+
+<section id="skills" class="skills">
+  <div class="shell">
+    <h2 class="eyebrow">Stack</h2>
+    <ul class="sr-only">
+      {SKILLS.map((skill) => <li>{skill.name}</li>)}
+    </ul>
+  </div>
+  {
+    rows.map((row, r) => (
+      <div class="track-clip" aria-hidden="true">
+        <div class:list={["track", r === 1 && "track-ghost"]} data-track={r === 0 ? "-1" : "1"}>
+          {[0, 1, 2].map(() => row.map((name) => <span>{name}</span>))}
+        </div>
+      </div>
+    ))
+  }
+</section>
